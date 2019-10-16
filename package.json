@@ -1,0 +1,9 @@
+{
+  "name": "com.quickeye.windowcloner",
+  "displayName": "Window Cloner",
+  "version": "1.0.0",
+  "unity": "2019.1",
+  "author": "Ernest Sury\u015b",
+  "description": "Duplicate Unity's editor windows like in a browser",
+  "type": "tool"
+}
