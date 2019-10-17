@@ -1,32 +1,20 @@
 ﻿using UnityEditor;
 using UnityEngine;
 using System;
-using System.Linq;
 using System.Reflection;
 using UnityEditor.ShortcutManagement;
+using System.Collections.Generic;
 
 namespace QuickEye.Utility
 {
     public static class WindowCloner
     {
-        private const string _projectWindowTypeName = "UnityEditor.ProjectBrowser";
-        private const string _inspectorWindowTypeName = "UnityEditor.InspectorWindow";
-
-        private static EditorWindowLocker[] _windowLockers;
-
-        static WindowCloner()
-        {
-            _windowLockers = new[]
-            {
-            new EditorWindowLocker(_projectWindowTypeName),
-            new EditorWindowLocker(_inspectorWindowTypeName)
-        };
-        }
+        private static Dictionary<Type, EditorWindowLocker> _cachedLockers = new Dictionary<Type, EditorWindowLocker>();
 
 #if UNITY_2019_1_OR_NEWER
-    [Shortcut("Window/Clone window", KeyCode.T, ShortcutModifiers.Shift | ShortcutModifiers.Action)]
+        [Shortcut("Window/Clone window", KeyCode.D, ShortcutModifiers.Shift | ShortcutModifiers.Alt)]
 #else
-        [MenuItem("Window/Clone window #%t")]
+        [MenuItem("Window/Clone window #&d")]
 #endif
         public static void CloneWindow()
         {
@@ -34,12 +22,16 @@ namespace QuickEye.Utility
             var newWindow = UnityEngine.Object.Instantiate(window);
 
             var windowType = newWindow.GetType();
-            var locker = _windowLockers.FirstOrDefault(l => l.WindowType == windowType);
 
-            if (locker != null)
+            if (!_cachedLockers.TryGetValue(windowType, out var locker))
             {
-                locker.LockWindow(newWindow, true);
+                if (EditorWindowLocker.TryGetWindowLocker(windowType, out locker))
+                {
+                    _cachedLockers[windowType] = locker;
+                }
             }
+
+            locker?.LockWindow(newWindow, true);
 
             newWindow.Show();
             SetupRect(newWindow, window.position);
@@ -66,16 +58,30 @@ namespace QuickEye.Utility
             private FieldInfo _lockTrackerField;
             private PropertyInfo _isLockedProperty;
 
-            private string _fullTypeName;
-
             public Type WindowType { get; }
 
-            public EditorWindowLocker(string fullTypeName)
+            public static bool TryGetWindowLocker(Type windowType, out EditorWindowLocker locker)
             {
-                _fullTypeName = fullTypeName;
+                if (typeof(EditorWindow).IsAssignableFrom(windowType) && GetLockTrackerField(windowType) != null)
+                {
+                    locker = new EditorWindowLocker(windowType);
+                    return true;
+                }
 
-                WindowType = typeof(EditorWindow).Assembly.GetType(_fullTypeName);
-                _lockTrackerField = WindowType.GetField(_inspectorWindowLockTrackerFieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+                locker = null;
+                return false;
+            }
+
+            //ToDo: SceneHierarchyWindow needs special handling
+            private static FieldInfo GetLockTrackerField(Type windowType)
+            {
+                return windowType.GetField(_inspectorWindowLockTrackerFieldName, BindingFlags.NonPublic | BindingFlags.Instance);
+            }
+
+            private EditorWindowLocker(Type windowType)
+            {
+                WindowType = windowType;
+                _lockTrackerField = GetLockTrackerField(WindowType);
                 _isLockedProperty = _lockTrackerField.FieldType.GetProperty(_lockTrackerLockedPropertyName, BindingFlags.NonPublic | BindingFlags.Instance);
             }
 
